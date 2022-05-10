@@ -1,0 +1,240 @@
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netdb.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <termios.h>
+
+
+ //DECLARATII GLOBALE
+int optiune; //numarul intreg prin intermediul caruia se alege optiunea dorita din meniu-
+//functia rulare(int)
+int s; //socket descriptor 
+int flag_conexiune = 0; //zero=deconectat, unu=conectat
+int flag_cerere = 0; //zero=deconectat, unu=conectat
+char fisier[] = "index.html"; //denumire fisier
+FILE * f; //pointer catre fisierul "index.html"
+void meniu(); //prototipul functiei meniu()
+void rulare(int optiune); //prototipul functiei rulare(int)
+int creare_socket(); //prototipul functiei creare_socket()
+void cerere(); //prototipul functiei cerere()
+void raspuns(); //prototipul functiei raspuns()
+void deconectare(int Socket); //prototipul functiei deconectare(int)
+void oprire(); //prototipul functiei oprire()
+char getch(); //prototipul functiei getch()
+//END DECLARATII GLOBALE
+
+
+//MAIN
+int main() {
+   do {
+      meniu(); //apelare functiei meniu()
+      rulare(optiune); //apelare functie rulare()
+   } while (optiune != 4); //conditia de oprire a structurii repetitive conditionata 
+//posterior (cu test final)
+   printf("\n\nProgram rulat!\n"); //afisare mesaj de verificare 
+   return 0;
+}
+//END MAIN
+
+
+//FUNCTIE AFISARE MENIU
+void meniu() {
+   printf("\n1.Conectare la server");
+   printf("\n2.Deconectare de la server");
+   printf("\n3.Rulare comanda \"GET / HTTP/1.0\\r\\n\\r\\n\""); //de modificat
+   printf("\n4.Iesire din aplicatie");
+   printf("\nIntroduceti optiunea dorita:_\n");
+   optiune = getch() - '0'; //optiune primeste optiunea aleasa de utilizator folosind 
+//functia getch() din care se scade '0' pentru a transforma din ASCII in intreg
+}
+//END FUNCTIE AFISARE MENIU
+
+
+//EXECUTAREA OPTIUNII ALESE
+void rulare(int optiune) {
+      switch (optiune) //switch pe variabila optiune in functie de varianta aleasa de 
+//utilizator
+      {
+      case 1:
+         if (flag_conexiune == 0) {
+            s = creare_socket(); //apelare functie creare_socket() 
+         } else
+            printf("\n\nConexiunea deja exista!\n");
+         break;
+      case 2:
+         if (flag_conexiune == 1) { //verificarea conexiunii la server 
+            deconectare(s); //deconectarea prin incetarea conexiunii la 
+//server prin apelul functiei deconectare()
+         } 
+		 else {
+            printf("\n\nSocket descriptorul nu este valid sau sunteti deja 
+               deconectat!Incercati alta varianta!\n ");
+            }
+         break;
+       case 3:
+          if (flag_conexiune == 1) { //verificarea conexiunii la server
+                  cerere(); //apelarea functiei cerere()
+                  raspuns(); //apelarea functiei raspuns()
+               }
+          else
+               printf("\n\nNu exista conexiune!\n");
+         break;
+       case 4: //se iese din switch deoarece optiunea 4 inseamna iesirea din 
+//program
+         break;
+       default: //se trateaza toate celelalte cazuri posibile care duc la o 
+//optiune invalida
+            printf("\n\nOptiunea selectata nu este valida! Incercati din 
+               nou!\n ");
+               break;
+            }
+         }
+//END EXECUTAREA OPTIUNII ALESE
+
+
+//CREARE SI CONECTARE LA SOCKET
+ int creare_socket() {
+            int sd; //socket descriptor
+            struct addrinfo hints, * res, * rp; //hints - variabila de tipul structurii 
+//addrinfo care specifica tipul socket-ului, res,rp fiind pointeri la structura 
+            memset( & hints, 0, sizeof(hints)); //alocare dinamica pentru variabila hints
+            hints.ai_family = AF_INET; //desemneaza tipul de adrese cu care se poate comunica -
+//in cazul nostru - IPv4
+            hints.ai_socktype = SOCK_STREAM; //TCP(SOCK_STREAM) este un protocol bazat pe 
+//conexiune. Dupa ce conexiunea este stabilita, cele 2 parti vor comunica pana cand una 
+//dintre ele intrerupe conexiunea
+            hints.ai_protocol = 0; //obligatoriu 0 pentru ca apelantul va accepta orice 
+//protocol
+            int g = getaddrinfo("he.net", "http", & hints, & res); //functia returneaza 0 daca s-au 
+//gasit adrese valide cu privire la filtrele setate prin variabila hints, iar res va 
+//contine lista de adrese valide
+//se trateaza cazul in care functia getaddrinfo nu functioneaza si returneaza o 
+//valoare diferita de 0, in acest caz se semnalizeaza eroarea si se iese din functia 
+//creare_socket()
+            if (g != 0) {
+               printf("Eroare la getaddrinfo!");
+               return 0;
+            }
+//se parcurge lista cu adrese
+            for (rp = res; rp != NULL; rp = rp -> ai_next) {
+               sd = socket(rp -> ai_family, rp -> ai_socktype, rp -> ai_protocol);
+               if (sd == -1) {
+                  continue; //trece la urmatoarea iteratie pentru ca sd=-1 inseamna ca 
+//socket descriptorul este invalid
+               }
+               if (connect(sd, rp -> ai_addr, rp -> ai_addrlen) != -1) { //cand functia socket() 
+//returneaza o valoarea naturala, >0, aceasta este atribuita socket descriptor-ului si se 
+//apeleaza functia connect() 
+                  break;
+               }
+            }
+            printf("\n\nConectare realizata!\n");
+            flag_conexiune = 1; //setarea variabilei cu 1 pentru a semnaliza realizarea cu 
+//succes a conexiunii dintre client si server
+            return sd;
+		}
+//END CREARE SI CONECTARE LA SOCKET
+
+
+//RULARE COMANDA
+void cerere() {
+            int octetiTrimisi = 0; //contor cu octetii trimisi de utilizator catre site
+            char * cerere = "GET / HTTP/1.0\r\n\r\n"; //pointer catre adresa de inceput a 
+//sirului 
+            int lungime = strlen(cerere); //initializarea variabilei lungime cu dimensiunea 
+            octetiTrimisi = send(s, cerere, lungime, 0); //reinitializarea variabilei cu nr de 
+//octeti trimis returnat de functia send()
+//in cazul tratat mai jos se verifica daca nr de octeti trimisi este un numar 
+//valid, diferit de 0, altfel iese din functia cerere()
+            if (octetiTrimisi == -1) {
+               printf("\nEroare la trimitere!\n");
+               printf("Incercati din nou!");
+               return;
+            }
+            printf("\nOcteti trimisi: %d ", octetiTrimisi); //afisarea numarului de octeti 
+            trimisi
+            flag_cerere = 1; //setarea variabilei cu 1 pentru a semnaliza realizarea cu succes a 
+            trimiterii cererii
+         }
+//END RULARE COMANDA
+
+
+//FUNCTIA RASPUNS
+void raspuns() {
+            if (flag_cerere == 1) { //se verifica daca s-a rulat cu succes functia cerere()
+               int octetiPrimiti = -1;
+               char pagina_html_primita[2000];
+               f = fopen(fisier, "w"); //deschiderea fisierului index.html in write mode 
+//(fopen() returneaza un pointer la fisier, altfel NULL)
+               if (f) {
+                  printf("\nFisierul 'index.html' a fost deschis!\n");
+               } else {
+                  printf("\nFisierul 'index.html' nu a fost deschis!\n");
+               }
+               while (octetiPrimiti != 0) {
+                  octetiPrimiti = recv(s, pagina_html_primita, 2000, 0); //functia recv() 
+//returneaza lungimea mesajului in bytes
+//functia recv() returneaza 0 in cazul in care nici un mesaj nu este 
+//valabil, in caz contrar se returneaza -1
+                  if (octetiPrimiti == -1) {
+                     printf("\nEroare la primire!\n");
+                     return;
+                  }
+                  if (octetiPrimiti != 0) {
+// printf("\nOcteti primiti: %d ",octetiPrimiti);
+                     for (int i = 0; i < octetiPrimiti; i++) { //se parcurg octetii primiti
+                        printf("%c", pagina_html_primita[i]); //se afiseaza pe 
+//ecran, pe rand, fiecare octet primit
+                        fprintf(f, "%c", pagina_html_primita[i]); //se scrie in 
+//fisier, pe rand, fiecare octet primit
+                     }
+                  }
+               }
+               fclose(f); //se inchide conexiunea catre fisier
+               printf("\n\nPagina html a fost primita!\n");
+               printf("\nFisierul 'index.html' a fost inchis!\n");
+               printf("\nConexiunea a fost intrerupta!\n");
+            } else
+               return;
+				}	
+//END RASPUNS
+
+
+//FUNCTIE DECONECTARE
+void deconectare(int Socket) { //primeste ca parametru un socket descriptor 
+            close(Socket); //inchide conexiunea specifica socketului
+            printf("\n\nDeconectare realizata!\n");
+            flag_conexiune = 0; //semnalizeaza inchiderea conexiunii dintre client si server
+         }
+//END DECONECTARE
+
+//FUNCTIA GETCH
+char getch() {
+            char buf = 0; //variabila de tip char folosita ca buffer
+            struct termios old = {
+               0
+            }; //old - variabila de tip structura termios; se 
+//initializeaza toate campurile cu 0
+            if (tcgetattr(0, & old) < 0) //0 - file descriptor specific pentru stdin; primeste 
+//si stocheaza in referinta structurii datele
+               perror("tcsetattr()"); //se afiseaza un mesaj de eroare
+//daca functia returneaza 0 atunci datele citite de la tastatura vor fi stocate in 
+//referinta structurii termios (old)
+            old.c_lflag &= ~ICANON; //se dezactiveaza modul canonic 
+            if (tcsetattr(0, TCSANOW, & old) < 0) //seteaza parametrii asociati terminalului la 
+//care se face referire
+               perror("tcsetattr ICANON"); //se afiseaza un mesaj de eroare
+            if (read(0, & buf, 1) < 0) //functia read citeste pana la 1 octet din fisierul 
+//asociat descriptorului de fisier 0 (stdin)
+               perror("read()"); //se afiseaza un mesaj de eroare
+            old.c_lflag |= ICANON; //se revine la modul canonic
+            if (tcsetattr(0, TCSADRAIN, & old) < 0) //seteaza parametrii asociati terminalului 
+//la care se face referire
+               perror("tcsetattr ~ICANON"); //se afiseaza un mesaj de eroare
+            return (buf);
+			 }
+//END GETCH
